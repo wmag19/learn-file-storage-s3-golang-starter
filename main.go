@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 
@@ -21,6 +22,7 @@ type apiConfig struct {
 	s3Region         string
 	s3CfDistribution string
 	port             string
+	allowedFileTypes []string
 }
 
 type thumbnail struct {
@@ -66,6 +68,11 @@ func main() {
 		log.Fatal("S3_BUCKET environment variable is not set")
 	}
 
+	allowedFileTypes := strings.Split(os.Getenv("ALLOWED_FILETYPES"), ",")
+	if allowedFileTypes == nil {
+		log.Fatal("ALLOWED_FILETYPES environment variable is not set")
+	}
+
 	s3Region := os.Getenv("S3_REGION")
 	if s3Region == "" {
 		log.Fatal("S3_REGION environment variable is not set")
@@ -91,6 +98,7 @@ func main() {
 		s3Region:         s3Region,
 		s3CfDistribution: s3CfDistribution,
 		port:             port,
+		allowedFileTypes: allowedFileTypes,
 	}
 
 	err = cfg.ensureAssetsDir()

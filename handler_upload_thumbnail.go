@@ -1,10 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
@@ -33,7 +36,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
-	// TODO: implement the upload here
 	const maxMemory = 10 << 20 //10MB limit
 	err = r.ParseMultipartForm(maxMemory)
 	if err != nil {
@@ -44,27 +46,43 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	file, header, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
+		return
 	}
-
 	defer file.Close()
 
 	fileType := header.Header.Get("Content-Type")
-	var fileRead []byte
-	fileRead, err = io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Unable to read file", err)
+	fileExtensionSlice := strings.Split(fileType, "/")
+	fileExtension := fileExtensionSlice[1]
+	isValidFileType := validFileType(fileExtension, cfg.allowedFileTypes)
+	if isValidFileType != true {
+		respondWithError(w, http.StatusNotAcceptable, "Invalid file extension", err)
 	}
+
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to get video", err)
 	}
 	if video.UserID != userID {
 		respondWithError(w, http.StatusUnauthorized, "UserID mismatch", err)
+		return
 	}
 
-	encodedThumbnail := base64.StdEncoding.EncodeToString(fileRead)
+	filePath := filepath.Join("./", cfg.assetsRoot, videoIDString+"."+fileExtension)
 
-	dataURL := "data:" + fileType + ";base64," + encodedThumbnail
+	osFile, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to save video file", err)
+		return
+	}
+	defer osFile.Close()
+
+	_, err = io.Copy(osFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to save video file", err)
+		return
+	}
+
+	dataURL := "http://localhost:8091/assets/" + videoIDString + "." + fileExtension
 	newVideo := database.Video{
 		ID:                video.ID,
 		CreatedAt:         video.CreatedAt,
@@ -73,13 +91,27 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		VideoURL:          video.VideoURL,
 		CreateVideoParams: video.CreateVideoParams,
 	}
+
 	err = cfg.db.UpdateVideo(newVideo)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to update video", err)
+		return
 	}
+
 	returnVideo, err := cfg.db.GetVideo(video.ID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to get updated video", err)
+		return
 	}
+
 	respondWithJSON(w, http.StatusOK, returnVideo)
+}
+
+func validFileType(fileType string, allowedList []string) bool {
+	fmt.Println(allowedList)
+	fmt.Println(fileType)
+	if slices.Contains(allowedList, fileType) {
+		return true
+	}
+	return false
 }
