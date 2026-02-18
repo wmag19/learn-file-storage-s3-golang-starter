@@ -108,8 +108,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 }
 
 func validFileType(fileType string, allowedList []string) bool {
-	fmt.Println(allowedList)
-	fmt.Println(fileType)
 	if slices.Contains(allowedList, fileType) {
 		return true
 	}
