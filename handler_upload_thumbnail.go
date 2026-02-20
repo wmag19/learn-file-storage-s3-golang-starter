@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,7 +69,15 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	filePath := filepath.Join("./", cfg.assetsRoot, videoIDString+"."+fileExtension)
+	randomKey := make([]byte, 32)
+	_, err = rand.Read(randomKey)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to save video file", err)
+		return
+	}
+	encodedString := base64.RawURLEncoding.EncodeToString(randomKey)
+
+	filePath := filepath.Join("./", cfg.assetsRoot, encodedString+"."+fileExtension)
 
 	osFile, err := os.Create(filePath)
 	if err != nil {
@@ -82,7 +92,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dataURL := "http://localhost:8091/assets/" + videoIDString + "." + fileExtension
+	dataURL := "http://localhost:8091/assets/" + encodedString + "." + fileExtension
 	newVideo := database.Video{
 		ID:                video.ID,
 		CreatedAt:         video.CreatedAt,
