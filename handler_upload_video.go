@@ -111,9 +111,19 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	default:
 		fileName = "/error/" + randomKey + ".mp4"
 	}
+	fastStartFileName, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to generate fast-start file:", err)
+		return
+	}
+	fastStartFile, err := os.Open(fastStartFileName)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to open fast-start file:", err)
+		return
+	}
 
 	s3Options := &s3.PutObjectInput{
-		Body:        tempFile,
+		Body:        fastStartFile,
 		Bucket:      &cfg.s3Bucket,
 		Key:         &fileName,
 		ContentType: &fileType,
@@ -124,6 +134,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer os.Remove(tempFile.Name())
+	defer os.Remove(fastStartFile.Name())
 
 	videoURL := "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + fileName
 
