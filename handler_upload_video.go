@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -136,7 +137,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer os.Remove(tempFile.Name())
 	defer os.Remove(fastStartFile.Name())
 
-	videoURL := "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + fileName
+	videoURL := cfg.s3Bucket + "," + fileName
 
 	fmt.Println("Uploaded video to URL: ", videoURL)
 	cfg.db.UpdateVideo(database.Video{
@@ -156,4 +157,41 @@ func randomHex(n int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+func generatePresignedUrl(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
+	type Presigner struct {
+		PresignClient *s3.PresignClient
+	}
+	presignClient := s3.NewPresignClient(s3Client)
+	request, err := presignClient.PresignGetObject(context.Background(), &s3.GetObjectInput{Bucket: &bucket, Key: &key}, s3.WithPresignExpires(expireTime))
+	if err != nil {
+		return "", err
+	}
+	return request.URL, nil
+}
+
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	if video.VideoURL == nil {
+		return video, nil
+	}
+
+	splitStrings := strings.Split(*video.VideoURL, ",")
+	bucket := splitStrings[0]
+	key := splitStrings[1]
+
+	presignedUrl, err := generatePresignedUrl(cfg.s3Client, bucket, key, time.Hour)
+	if err != nil {
+		return database.Video{}, err
+	}
+
+	newVideo := database.Video{
+		ID:                video.ID,
+		CreatedAt:         video.CreatedAt,
+		UpdatedAt:         video.UpdatedAt,
+		VideoURL:          &presignedUrl,
+		ThumbnailURL:      video.ThumbnailURL,
+		CreateVideoParams: video.CreateVideoParams,
+	}
+	return newVideo, nil
 }
